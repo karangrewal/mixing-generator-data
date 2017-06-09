@@ -42,21 +42,20 @@ if __name__ == '__main__':
     # Real and fake discriminators
     F, R = real_fake_discriminator(y_fake), real_fake_discriminator(y_real)
 
-    # Temporary names
-    r_real = T.fmatrix()
+    # Samples from N(0,1) and N(1,1)
+    v_0 = T.fmatrix()
+    v_1 = T.fmatrix()
+
+    # Outputs of real and fake discriminators
+    r_real = get_output(R, inputs=v_1)
     r_fake = get_output(R)
-    f_real = T.fmatrix()
+    f_real = get_output(F, inputs=v_0)
     f_fake = get_output(F)
 
     # Loss functions
     F_loss = (T.nnet.softplus(-f_real) + T.nnet.softplus(-f_fake) + f_fake).mean()
     R_loss = (T.nnet.softplus(-r_real) + T.nnet.softplus(-r_fake) + r_fake).mean()
     D_loss = (T.nnet.softplus(-f_fake) + T.nnet.softplus(-r_fake)).mean()
-    '''
-    F_loss = -(T.log(1.-f_fake) + T.log(f_real)).mean()
-    R_loss = -(T.log(1.-r_fake) + T.log(r_real)).mean()
-    D_loss = -(T.log(f_fake) + T.log(r_fake)).mean()
-    '''
     G_loss = 0.5 * ((y_fake - 1) ** 2).mean()
 
     # Updates to be performed during training
@@ -96,8 +95,8 @@ if __name__ == '__main__':
         epsilon=params['adam_epsilon']
     )
 
-    train_F = function(inputs=[f_real, z], outputs=F_loss, updates=updates_F, allow_input_downcast=True)
-    train_R = function(inputs=[r_real, X], outputs=R_loss, updates=updates_R, allow_input_downcast=True)
+    train_F = function(inputs=[v_0, z], outputs=F_loss, updates=updates_F, allow_input_downcast=True)
+    train_R = function(inputs=[v_1, X], outputs=R_loss, updates=updates_R, allow_input_downcast=True)
     train_D = function(inputs=[X, z], outputs=D_loss, updates=updates_D, allow_input_downcast=True)
     train_G = function(inputs=[z], outputs=G_loss, updates=updates_G, allow_input_downcast=True)
 
@@ -108,13 +107,18 @@ if __name__ == '__main__':
     G_grad_norm = (T.grad(G_loss, X_fake) ** 2).sum(axis=(0,1,2,3))
 
     # Value of E||grad(dL/dx)||^2
-    F_grad_norm_value = function(inputs=[f_real, z],outputs=F_grad_norm)
-    R_grad_norm_value = function(inputs=[r_real, X],outputs=R_grad_norm)
+    F_grad_norm_value = function(inputs=[v_0, z],outputs=F_grad_norm)
+    R_grad_norm_value = function(inputs=[v_1, X],outputs=R_grad_norm)
     D_grad_norm_value = function(inputs=[X, z],outputs=D_grad_norm)
     G_grad_norm_value = function(inputs=[z],outputs=G_grad_norm)
 
     # Load data
     batches = get_data(params['batch_size'])
+
+    D_out_R = function(inputs=[X], outputs=y_real)
+    D_out_F = function(inputs=[z], outputs=y_fake)
+
+    print('\n============COMPILES============\n')
 
     for epoch in range(params['epochs']):
         print('\nStarting Epoch {}/{} ...\n'.format(epoch+1, params['epochs']))
@@ -131,37 +135,47 @@ if __name__ == '__main__':
         D_grad_norms = np.zeros(shape=(batches.shape[0], params['iters_D']))
         G_grad_norms = np.zeros(shape=(batches.shape[0]))
 
-        # Train fake data discriminator
-        for k in range(params['iters_F']):
-            for i in range(batches.shape[0]):
-                f_real_i = np.float32(np.random.normal(size=(params['batch_size'],1)))
+        # D samples
+        D_samples = np.zeros(shape=(batches.shape[0]*32, 2))
+        D_samples.fill(99.)
+
+        # Training
+        for i in range(batches.shape[0]):
+
+            # Train fake data discriminator
+            for k in range(params['iters_F']):
+                v_0_i = np.float32(np.random.normal(size=(params['batch_size'],1)))
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                F_losses[i,k] = train_F(f_real_i, z_i)
-                F_grad_norms[i,k] = F_grad_norm_value(f_real_i, z_i)
+                F_losses[i,k] = train_F(v_0_i, z_i)
+                F_grad_norms[i,k] = F_grad_norm_value(v_0_i, z_i)
 
-        # Train real data discriminator
-        for k in range(params['iters_R']):
-            np.random.shuffle(batches)
-            for i in range(batches.shape[0]):
-                r_real_i = np.float32(np.random.normal(loc=1.0,size=(params['batch_size'],1)))
+            # Train real data discriminator
+            for k in range(params['iters_R']):
+                np.random.shuffle(batches)
+                v_1_i = np.float32(np.random.normal(loc=1.0,size=(params['batch_size'],1)))
                 x_i = batches[i]
-                R_losses[i,k] = train_R(r_real_i, x_i)
-                R_grad_norms[i,k] = R_grad_norm_value(r_real_i, x_i)
+                R_losses[i,k] = train_R(v_1_i, x_i)
+                R_grad_norms[i,k] = R_grad_norm_value(v_1_i, x_i)
 
-        # Train discriminator
-        for k in range(params['iters_D']):
-            np.random.shuffle(batches)
-            for i in range(batches.shape[0]):
+            # Train discriminator
+            for k in range(params['iters_D']):
+                np.random.shuffle(batches)
                 x_i = batches[i]
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
                 D_losses[i,k] = train_D(x_i, z_i)
                 D_grad_norms[i,k] = D_grad_norm_value(x_i, z_i)
 
-        # train generator
-        for i in range(batches.shape[0]):
+            # train generator
             z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
             G_losses[i] = train_G(z_i)
             G_grad_norms[i] = G_grad_norm_value(z_i)
+
+            # Sample from D
+        for i in range(batches.shape[0]):
+            x_i = batches[i]
+            z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
+            D_samples[i*32:i*32+params['batch_size'],0:1] = D_out_R(x_i)
+            D_samples[i*32:i*32+params['batch_size'],1:2] = D_out_F(z_i)
 
         # End of epoch
         with open('/u/grewalka/lasagne/F_losses.npz', 'w+') as f:
@@ -180,3 +194,6 @@ if __name__ == '__main__':
             np.savez(f, G_losses, delimiter=',')
         with open('/u/grewalka/lasagne/G_grad_norms.npz', 'w+') as f:
             np.savez(f, G_grad_norms, delimiter=',')
+
+        with open('/u/grewalka/lasagne/D_samples.npz', 'w+') as f:
+            np.savez(f, D_samples, delimiter=',')

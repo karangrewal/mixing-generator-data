@@ -1,7 +1,7 @@
 
 
 from lasagne.layers import batch_norm, Conv2DLayer, DenseLayer, InputLayer, MaxPool2DLayer, ReshapeLayer, TransposedConv2DLayer
-from lasagne.nonlinearities import leaky_rectify, linear, rectify, LeakyRectify
+from lasagne.nonlinearities import leaky_rectify, linear, rectify, sigmoid, LeakyRectify
 import theano
 import lasagne
 import theano.tensor as T
@@ -59,7 +59,7 @@ class Deconv2DLayer(lasagne.layers.Layer):
         return self.nonlinearity(conved)
 
 def discriminator(input_var=None, dim_h=64, use_batch_norm=True,
-                        leak=None):
+                        leak=0.01):
     if not use_batch_norm:
         bn = lambda x: x
     else:
@@ -68,9 +68,9 @@ def discriminator(input_var=None, dim_h=64, use_batch_norm=True,
     
     layer = InputLayer(shape=(None, N_CHANNELS, N_ROWS, N_COLS), input_var=input_var)
     
-    layer = bn(Conv2DLayer(layer, dim_h, 5, stride=2, pad=2, nonlinearity=rectify))
-    layer = bn(Conv2DLayer(layer, dim_h * 2, 5, stride=2, pad=2, nonlinearity=rectify))
-    layer = DenseLayer(layer, 1024, nonlinearity=rectify)
+    layer = bn(Conv2DLayer(layer, dim_h, 5, stride=2, pad=2, nonlinearity=lrelu))
+    layer = bn(Conv2DLayer(layer, dim_h * 2, 5, stride=2, pad=2, nonlinearity=lrelu))
+    layer = DenseLayer(layer, 1024, nonlinearity=lrelu)
     layer = DenseLayer(layer, 1, nonlinearity=linear)
     return layer
 
@@ -81,6 +81,6 @@ def generator(input_var=None, dim_z=100, dim_h=64):
     layer = batch_norm(DenseLayer(layer, dim_h * 2 * 7 * 7))
     layer = ReshapeLayer(layer, ([0], dim_h * 2, 7, 7))
     layer = batch_norm(Deconv2DLayer(layer, dim_h, 5, stride=2, pad=2))
-    layer = Deconv2DLayer(layer, N_CHANNELS, 5, stride=2, pad=2)
+    layer = Deconv2DLayer(layer, N_CHANNELS, 5, stride=2, pad=2, nonlinearity=sigmoid)
     
     return layer

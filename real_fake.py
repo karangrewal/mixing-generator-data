@@ -14,5 +14,6 @@ DIM_Z = 100
 
 def real_fake_discriminator(input_var=None):
 	layer = InputLayer(shape=(None,1), input_var=input_var)
+	layer = DenseLayer(layer, 28)
 	layer = DenseLayer(layer, 1, nonlinearity=linear)
 	return layer
