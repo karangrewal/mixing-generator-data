@@ -1,16 +1,18 @@
+# Note: Generated images are scaled between 0 and 1.
 
-
-from lasagne.layers import batch_norm, Conv2DLayer, DenseLayer, InputLayer, MaxPool2DLayer, ReshapeLayer, TransposedConv2DLayer
-from lasagne.nonlinearities import leaky_rectify, linear, rectify, sigmoid, LeakyRectify
+from lasagne.layers import batch_norm, Conv2DLayer, DenseLayer, InputLayer, ReshapeLayer
+from lasagne.nonlinearities import LeakyRectify, tanh
 import theano
 import lasagne
 import theano.tensor as T
 
-N_CHANNELS = 1
-N_ROWS = 28
-N_COLS = 28
+N_CHANNELS = 3
+N_ROWS = 32
+N_COLS = 32
 DIM_H = 64
 DIM_Z = 100
+
+lrelu = LeakyRectify(0.02)
 
 class Deconv2DLayer(lasagne.layers.Layer):
     def __init__(self, incoming, num_filters, filter_size, stride=1, pad=0,
@@ -28,14 +30,17 @@ class Deconv2DLayer(lasagne.layers.Layer):
                 name='W')
         else:
             self.W = self.add_param(
-                W, (self.input_shape[1], num_filters) + self.filter_size,
+                W,
+                (self.input_shape[1], num_filters) + self.filter_size,
                 name='W')
         if b is None:
-            self.b = self.add_param(
-                lasagne.init.Constant(0), (num_filters,), name='b')
+            self.b = self.add_param(lasagne.init.Constant(0),
+                                    (num_filters,),
+                                    name='b')
         else:
-            self.b = self.add_param(
-                b, (num_filters,), name='b')
+            self.b = self.add_param(b,
+                                    (num_filters,),
+                                    name='b')
         if nonlinearity is None:
             nonlinearity = lasagne.nonlinearities.identity
         self.nonlinearity = nonlinearity
@@ -58,29 +63,19 @@ class Deconv2DLayer(lasagne.layers.Layer):
             conved += self.b.dimshuffle('x', 0, 'x', 'x')
         return self.nonlinearity(conved)
 
-def discriminator(input_var=None, dim_h=64, use_batch_norm=True,
-                        leak=0.01):
-    if not use_batch_norm:
-        bn = lambda x: x
-    else:
-        bn = batch_norm
-    lrelu = LeakyRectify(leak)
-    
+def discriminator(input_var=None, dim_h=128, **kwargs):
     layer = InputLayer(shape=(None, N_CHANNELS, N_ROWS, N_COLS), input_var=input_var)
-    
-    layer = bn(Conv2DLayer(layer, dim_h, 5, stride=2, pad=2, nonlinearity=lrelu))
-    layer = bn(Conv2DLayer(layer, dim_h * 2, 5, stride=2, pad=2, nonlinearity=lrelu))
-    layer = DenseLayer(layer, 1024, nonlinearity=lrelu)
-    layer = DenseLayer(layer, 1, nonlinearity=linear)
+    layer = Conv2DLayer(layer, dim_h, 5, stride=2, pad=2, nonlinearity=lrelu)
+    layer = batch_norm(Conv2DLayer(layer, dim_h * 2, 5, stride=2, pad=2, nonlinearity=lrelu))
+    layer = batch_norm(Conv2DLayer(layer, dim_h * 4, 5, stride=2, pad=2, nonlinearity=lrelu))
+    layer = DenseLayer(layer, 1, nonlinearity=None)
     return layer
 
-def generator(input_var=None, dim_z=100, dim_h=64):
+def generator(input_var=None, dim_z=100, dim_h=128, **kwargs):
     layer = InputLayer(shape=(None, dim_z), input_var=input_var)
-    
-    layer = batch_norm(DenseLayer(layer, 1024))
-    layer = batch_norm(DenseLayer(layer, dim_h * 2 * 7 * 7))
-    layer = ReshapeLayer(layer, ([0], dim_h * 2, 7, 7))
+    layer = batch_norm(DenseLayer(layer, dim_h * 4 * 4 * 4))
+    layer = ReshapeLayer(layer, ([0], dim_h * 4, 4, 4))
+    layer = batch_norm(Deconv2DLayer(layer, dim_h * 2, 5, stride=2, pad=2))
     layer = batch_norm(Deconv2DLayer(layer, dim_h, 5, stride=2, pad=2))
-    layer = Deconv2DLayer(layer, N_CHANNELS, 5, stride=2, pad=2, nonlinearity=sigmoid)
-    
+    layer = Deconv2DLayer(layer, N_CHANNELS, 5, stride=2, pad=2, nonlinearity=tanh)
     return layer
