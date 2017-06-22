@@ -1,4 +1,8 @@
-# Note: Generated images are scaled between 0 and 1.
+"""
+Code taken from Devon Hjelm.
+"""
+
+# Note: Generated images are scaled between -1 and 1.
 
 from lasagne.layers import batch_norm, Conv2DLayer, DenseLayer, InputLayer, ReshapeLayer
 from lasagne.nonlinearities import LeakyRectify, tanh
@@ -12,7 +16,7 @@ N_COLS = 32
 DIM_H = 64
 DIM_Z = 100
 
-lrelu = LeakyRectify(0.02)
+lrelu = LeakyRectify(0.2)
 
 class Deconv2DLayer(lasagne.layers.Layer):
     def __init__(self, incoming, num_filters, filter_size, stride=1, pad=0,

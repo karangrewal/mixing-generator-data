@@ -27,8 +27,8 @@ if __name__ == '__main__':
         'batch_size':64,
         'dim_z':100,
         'iters_D':20,
-        'iters_F':20,
-        'iters_R':20,
+        'iters_F':5,
+        'iters_R':5,
         'epochs':200
     }
 

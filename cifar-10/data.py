@@ -1,3 +1,5 @@
+# NOTE: CIFAR-10 examples are scaled between -1 and +1.
+
 import h5py
 import numpy as np
 import pickle
@@ -29,9 +31,11 @@ def get_data(batch_size=64):
     data = np.concatenate((data, _data), axis=0)
 
     k = data.shape[0]
-    data = data.reshape(k, 3, 32, 32)#.transpose(0, 2, 3, 1)
+    data = data.reshape(k, 3, 32, 32)
     data = np.float32(data)
     data = data / 255.
+    data = data * 2.
+    data = data - 1.
 
     k = k / batch_size
     k = k * batch_size

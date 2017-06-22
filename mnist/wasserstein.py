@@ -22,7 +22,7 @@ if __name__ == '__main__':
         'adam_epsilon':3e-6,
         'adam_learning_rate':0.0001,
         'batch_size': 64,
-        'discriminator_iters':50,
+        'discriminator_iters':1,
         'epochs':50,
     }
 
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     y_fake = get_output(D, X_fake)
     
     # Wasserstein loss
-    D_loss = (-(y_fake - y_real)).mean()
+    D_loss = (y_fake - y_real).mean()
     G_loss = (-y_fake).mean()
 
     updates_D = adam(
