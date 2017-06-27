@@ -29,7 +29,7 @@ if __name__ == '__main__':
         'iters_D':50,
         'iters_F':50,
         'iters_R':50,
-        'epochs':50
+        'epochs':100
     }
 
     out_dir = '/u/grewalka/lasagne/variance/%d_%d_%d_1/' % (params['iters_F'], params['iters_R'], params['iters_D'])
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     X = T.tensor4()
     z = T.fmatrix()
 
-    D, G = discriminator(X, use_batch_norm=False), generator(z, use_batch_norm=False)
+    D, G = discriminator(X, use_batch_norm=True), generator(z, use_batch_norm=True)
 
     y_real = get_output(D)
     X_fake = get_output(G)
@@ -116,10 +116,10 @@ if __name__ == '__main__':
     # G_grad = T.grad(G_loss, X_fake)
 
     # Value of E||dF/dx||^2, E||dR/dx||^2, E||dD/dx||^2
-    F_grad_fake_norm_value = function([z],outputs=(F_grad_fake**2).sum(axis=(0,1,2,3)))
-    R_grad_fake_norm_value = function([X],outputs=(R_grad_fake**2).sum(axis=(0,1,2,3)))
-    D_grad_real_norm_value = function([X],outputs=(D_grad_real**2).sum(axis=(0,1,2,3)))
-    D_grad_fake_norm_value = function([z],outputs=(D_grad_fake**2).sum(axis=(0,1,2,3)))
+    F_grad_fake_norm_value = function([z],outputs=(F_grad_fake**2).sum(axis=(1,2,3)).mean())
+    R_grad_fake_norm_value = function([X],outputs=(R_grad_fake**2).sum(axis=(1,2,3)).mean())
+    D_grad_real_norm_value = function([X],outputs=(D_grad_real**2).sum(axis=(1,2,3)).mean())
+    D_grad_fake_norm_value = function([z],outputs=(D_grad_fake**2).sum(axis=(1,2,3)).mean())
     # G_grad_norm_value = function([z],outputs=(G_grad**2).sum(axis=(0,1,2,3)))
 
     # Load data
