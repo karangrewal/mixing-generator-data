@@ -29,7 +29,7 @@ if __name__ == '__main__':
         'iters_F':1,
         'iters_R':1,
         'epochs':20,
-        'load_generator':True
+        'load_model':False
     }
 
     out_dir = '/u/grewalka/lasagne/gamma-experiment/variance/%d_%d_%d_1/' % (params['iters_F'], params['iters_R'], params['iters_D'])
@@ -115,26 +115,32 @@ if __name__ == '__main__':
     generate = function([z], outputs=X_fake)
     D_out = function([X], outputs=y_real)
     
-    D_grad_norms = np.zeros(shape=(100))
-    D_samples = np.zeros(shape=(100, params['batch_size']))
+    D_grad_norms = np.zeros(shape=(100, 32))
+    D_samples = np.zeros(shape=(100, params['batch_size'], 32))
     
-    if params['load_generator']:
+    if params['load_model']:
         
-        with open(os.path.join(out_dir, 'generator_model_%d.npz' % params['epochs'])) as f:
+        # Load parameters
+        with open(os.path.join(out_dir, 'discriminator_model.npz')) as f:
+            D_params = np.load(f)['arr_0']
+        set_all_param_values(D, [param.get_value() for param in D_params])
+        
+        with open(os.path.join(out_dir, 'generator_model.npz')) as f:
             G_params = np.load(f)['arr_0']
         set_all_param_values(G, [param.get_value() for param in G_params])
         
         k = 0
         for gamma in (np.array(range(0, 100)) / 100.):
     
-            z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-            x_fake = generate(z_i)
-            iterator = stream.get_epoch_iterator()
-            x_real = iterator.next()[0]
-            
-            x_hat = np.float32(gamma * x_fake + (1.-gamma) * x_real)
-            D_samples[k,:] = D_out(x_hat).reshape(params['batch_size'])
-            D_grad_norms[k] = D_grad_norm_value(x_hat)
+            for n in range(32):
+                z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
+                x_fake = generate(z_i)
+                iterator = stream.get_epoch_iterator()
+                x_real = iterator.next()[0]
+                
+                x_hat = np.float32(gamma * x_fake + (1.-gamma) * x_real)
+                D_samples[k,:,n] = D_out(x_hat).reshape(params['batch_size'])
+                D_grad_norms[k,n] = D_grad_norm_value(x_hat)
             k += 1
             
         with open(os.path.join(out_dir, 'D_samples_gamma_{}.npz'.format(params['epochs'])), 'w+') as f:
@@ -190,14 +196,15 @@ if __name__ == '__main__':
             k = 0
             for gamma in (np.array(range(0, 100)) / 100.):
         
-                z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                x_fake = generate(z_i)
-                iterator = stream.get_epoch_iterator()
-                x_real = iterator.next()[0]
-                
-                x_hat = np.float32(gamma * x_fake + (1.-gamma) * x_real)
-                D_samples[k,:] = D_out(x_hat).reshape(params['batch_size'])
-                D_grad_norms[k] = D_grad_norm_value(x_hat)
+                for n in range(32):
+                    z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
+                    x_fake = generate(z_i)
+                    iterator = stream.get_epoch_iterator()
+                    x_real = iterator.next()[0]
+                    
+                    x_hat = np.float32(gamma * x_fake + (1.-gamma) * x_real)
+                    D_samples[k,:, n] = D_out(x_hat).reshape(params['batch_size'])
+                    D_grad_norms[k, n] = D_grad_norm_value(x_hat)
                 k += 1
                 
             with open(os.path.join(out_dir, 'D_samples_gamma_{}.npz'.format(epoch+1)), 'w+') as f:
@@ -206,6 +213,10 @@ if __name__ == '__main__':
                 np.savez(f, D_grad_norms)
         
         # Save model
+        D_params = get_all_params(get_all_layers(D))
+        with open(os.path.join(out_dir, 'discriminator_model.npz'), 'w+') as f:
+            np.savez(f, D_params)
+        
         G_params = get_all_params(get_all_layers(G))
         with open(os.path.join(out_dir, 'generator_model.npz'), 'w+') as f:
             np.savez(f, G_params)
