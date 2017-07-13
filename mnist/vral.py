@@ -34,7 +34,7 @@ if __name__ == '__main__':
         'adam_learning_rate':0.0001,
         'batch_size':64,
         'dim_z':100,
-        'iters_D':50,
+        'iters_D':5,
         'epochs':60,
         'KL': 'backward'
     }
@@ -58,17 +58,24 @@ if __name__ == '__main__':
     y_0 = T.fmatrix()
     y_1 = T.fmatrix()
 
+    # Samples from discriminator if using backward KL
+    y = T.fvector()
+
     # Mixture components for parzen density estimator
     sigma_fake = 1.
     sigma_real = 1.
-    f_mixture = -(y_0 - y_fake) ** 2 / (2.*sigma_fake ** 2)
-    r_mixture = -(y_1 - y_real) ** 2 / (2.*sigma_real ** 2)
 
     # Loss functions
     if params['KL'] == 'forward':
-        D_loss = -log_sum_exp(f_mixture, axis=1).mean() - log_sum_exp(r_mixture, axis=1).mean()
+        f_mixture = (y_0 - T.shape_padleft(y_fake)) ** 2 / (2.*sigma_fake ** 2)
+        r_mixture = (y_1 - T.shape_padleft(y_real)) ** 2 / (2.*sigma_real ** 2)
+        D_loss = -log_sum_exp(-f_mixture, axis=1).mean() - log_sum_exp(-r_mixture, axis=1).mean()
     elif params['KL'] == 'backward':
-        D_loss = (0.5 * (y_fake ** 2  + (y_real - 1) ** 2)).mean()
+        f_mixture = (T.shape_padleft(y_fake) - (T.tile(T.shape_padaxis(y_fake, 1), (1, y_fake.shape[0]))))
+        f_mixture = f_mixture ** 2 / (2.*sigma_fake ** 2)
+        r_mixture = (T.shape_padleft(y_real) - (T.tile(T.shape_padaxis(y_real, 1), (1, y_real.shape[0]))))
+        r_mixture = r_mixture ** 2 / (2.*sigma_real ** 2)
+        D_loss = 0.5 * (y_fake ** 2 + (y_real - 1) ** 2).mean() + log_sum_exp(-f_mixture, axis=1).mean() + log_sum_exp(-r_mixture, axis=1).mean()
     G_loss = 0.5 * ((y_fake - 1) ** 2).mean()
 
     # Updates to be performed during training
@@ -180,4 +187,3 @@ if __name__ == '__main__':
             np.savez(f, D_grad_real_norms, delimiter=',')
         with open(os.path.join(out_dir, '%d_D_grad_fake_norms.npz' % (epoch+1)), 'w+') as f:
             np.savez(f, D_grad_fake_norms, delimiter=',')
-
