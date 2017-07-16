@@ -34,7 +34,7 @@ if __name__ == '__main__':
         'adam_learning_rate':0.0001,
         'batch_size':64,
         'dim_z':100,
-        'iters_D':5,
+        'iters_D':1,
         'epochs':60,
         'KL': 'backward'
     }
@@ -55,8 +55,8 @@ if __name__ == '__main__':
     y_fake = get_output(D, X_fake)
 
     # Samples from N(0,1) and N(1,1) if using forward KL
-    y_0 = T.fmatrix()
-    y_1 = T.fmatrix()
+    y_0 = T.fvector()
+    y_1 = T.fvector()
 
     # Samples from discriminator if using backward KL
     y = T.fvector()
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     # Loss functions
     if params['KL'] == 'forward':
         f_mixture = (y_0 - T.shape_padleft(y_fake)) ** 2 / (2.*sigma_fake ** 2)
-        r_mixture = (y_1 - T.shape_padleft(y_real)) ** 2 / (2.*sigma_real ** 2)
+        r_mixture = (y_1 - T.shape_padleft(y_real)) ** 2 / (2.*sigma_real ** 2) 
         D_loss = -log_sum_exp(-f_mixture, axis=1).mean() - log_sum_exp(-r_mixture, axis=1).mean()
     elif params['KL'] == 'backward':
         f_mixture = (T.shape_padleft(y_fake) - (T.tile(T.shape_padaxis(y_fake, 1), (1, y_fake.shape[0]))))
@@ -146,8 +146,8 @@ if __name__ == '__main__':
                 # Train discriminator
                 x_i = iterator.next()[0]
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                y_0_i = np.float32(np.random.normal(size=(params['batch_size'],1)))
-                y_1_i = np.float32(np.random.normal(loc=1.0,size=(params['batch_size'],1)))
+                y_0_i = np.float32(np.random.normal(size=(params['batch_size'])))
+                y_1_i = np.float32(np.random.normal(loc=1.0,size=(params['batch_size'])))
 
                 if params['KL'] == 'forward':
                     D_losses[i,k] = train_D(x_i, z_i, y_0_i, y_1_i)
