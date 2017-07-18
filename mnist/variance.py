@@ -25,14 +25,15 @@ if __name__ == '__main__':
         'adam_epsilon':3e-6,
         'adam_learning_rate':0.0001,
         'batch_size':64,
+        'D_loss': 'regular',
         'dim_z':100,
-        'iters_D':50,
-        'iters_F':50,
-        'iters_R':50,
-        'epochs':100
+        'iters_D':1,
+        'iters_F':1,
+        'iters_R':1,
+        'epochs':40
     }
-
-    out_dir = '/u/grewalka/lasagne/variance/%d_%d_%d_1/' % (params['iters_F'], params['iters_R'], params['iters_D'])
+    
+    out_dir = '/u/grewalka/lasagne/variance_%s/%d_%d_%d_1/' % (params['D_loss'], params['iters_F'], params['iters_R'], params['iters_D'])
     
     with open(os.path.join(out_dir, 'out.log'), 'w+') as f:
         f.write('Variance-maximizing GAN\n')
@@ -63,7 +64,10 @@ if __name__ == '__main__':
     # Loss functions
     F_loss = (T.nnet.softplus(-f_real) + T.nnet.softplus(-f_fake) + f_fake).mean()
     R_loss = (T.nnet.softplus(-r_real) + T.nnet.softplus(-r_fake) + r_fake).mean()
-    D_loss = (T.nnet.softplus(-f_fake) + T.nnet.softplus(-r_fake)).mean()
+    if params['D_loss'] == 'regular':
+        D_loss = (-(T.nnet.softplus(-f_fake) + T.nnet.softplus(-r_fake) + f_fake + r_fake)).mean()
+    elif params['D_loss'] == 'proxy':
+        D_loss = (T.nnet.softplus(-f_fake) + T.nnet.softplus(-r_fake)).mean()
     G_loss = 0.5 * ((y_fake - 1) ** 2).mean()
 
     # Updates to be performed during training
@@ -120,10 +124,9 @@ if __name__ == '__main__':
     R_grad_fake_norm_value = function([X],outputs=(R_grad_fake**2).sum(axis=(1,2,3)).mean())
     D_grad_real_norm_value = function([X],outputs=(D_grad_real**2).sum(axis=(1,2,3)).mean())
     D_grad_fake_norm_value = function([z],outputs=(D_grad_fake**2).sum(axis=(1,2,3)).mean())
-    # G_grad_norm_value = function([z],outputs=(G_grad**2).sum(axis=(0,1,2,3)))
-
+    
     # Load data
-    batches = get_data(params['batch_size'])
+    stream, num_examples = get_data(params['batch_size'])
 
     # Sampling functions
     generate = function([z], outputs=X_fake)
@@ -134,45 +137,46 @@ if __name__ == '__main__':
     print('Output files will be placed in: {}'.format(out_dir))
 
     for epoch in range(params['epochs']):
-        print('\nStarting Epoch {}/{} ...\n'.format(epoch+1, params['epochs']))
-        np.random.shuffle(batches)
-
+        print('Starting Epoch {}/{} ...'.format(epoch+1, params['epochs']))
+        
         # Keep track of Information
-        F_losses = np.zeros(shape=(batches.shape[0], params['iters_F']))
-        R_losses = np.zeros(shape=(batches.shape[0], params['iters_R']))
-        D_losses = np.zeros(shape=(batches.shape[0], params['iters_D']))
-        G_losses = np.zeros(shape=(batches.shape[0]))
+        F_losses = np.zeros(shape=(num_examples / params['batch_size'], params['iters_F']))
+        R_losses = np.zeros(shape=(num_examples / params['batch_size'], params['iters_R']))
+        D_losses = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
+        G_losses = np.zeros(shape=(num_examples / params['batch_size']))
 
-        F_grad_fake_norms = np.zeros(shape=(batches.shape[0], params['iters_F']))
-        R_grad_fake_norms = np.zeros(shape=(batches.shape[0], params['iters_R']))
-        D_grad_real_norms = np.zeros(shape=(batches.shape[0], params['iters_D']))
-        D_grad_fake_norms = np.zeros(shape=(batches.shape[0], params['iters_D']))
+        F_grad_fake_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_F']))
+        R_grad_fake_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_R']))
+        D_grad_real_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
+        D_grad_fake_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
         # G_grad_norms = np.zeros(shape=(params['epochs'], batches.shape[0]))
 
-        D_samples = np.zeros(shape=(batches.shape[0]*params['batch_size'] , 2))
+        D_samples = np.zeros(shape=((num_examples / params['batch_size'])*params['batch_size'] , 2))
         D_samples.fill(99.)
-
+        
         # Training
-        for i in range(batches.shape[0]):
+        for i in range(num_examples / params['batch_size']):
+            
+            iterator = stream.get_epoch_iterator()
+            x_i = iterator.next()[0]
 
             # Train fake data discriminator
-            for k in range(params['iters_F']):
-                v_0_i = np.float32(np.random.normal(size=(params['batch_size'],1)))
-                z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                F_losses[i,k] = train_F(v_0_i, z_i)
-                F_grad_fake_norms[i,k] = F_grad_fake_norm_value(z_i)
+            v_0_i = np.float32(np.random.normal(size=(params['batch_size'],1)))
+            z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
+            F_losses[i,0] = train_F(v_0_i, z_i)
+            F_grad_fake_norms[i,0] = F_grad_fake_norm_value(z_i)
 
             # Train real data discriminator
-            for k in range(params['iters_R']):
-                v_1_i = np.float32(np.random.normal(loc=1.0,size=(params['batch_size'],1)))
-                x_i = batches[np.random.randint(batches.shape[0])]
-                R_losses[i,k] = train_R(v_1_i, x_i)
-                R_grad_fake_norms[i,k] = R_grad_fake_norm_value(x_i)
+            v_1_i = np.float32(np.random.normal(loc=1.0,size=(params['batch_size'],1)))
+            x_i = iterator.next()[0]
+            R_losses[i,0] = train_R(v_1_i, x_i)
+            R_grad_fake_norms[i,0] = R_grad_fake_norm_value(x_i)
 
-            # Train discriminator
+            iterator = stream.get_epoch_iterator()
             for k in range(params['iters_D']):
-                np.random.shuffle(batches)
-                x_i = batches[np.random.randint(batches.shape[0])]
+
+                # Train discriminator
+                x_i = iterator.next()[0]
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
                 D_losses[i,k] = train_D(x_i, z_i)
                 D_grad_real_norms[i,k] = D_grad_real_norm_value(x_i)
@@ -190,8 +194,9 @@ if __name__ == '__main__':
             np.savez(f, x_samples, delimiter=',')
 
         # Sample from D
-        for i in range(batches.shape[0]):
-            x_i = batches[i]
+        iterator = stream.get_epoch_iterator()
+        for i in range(num_examples / params['batch_size']):
+            x_i = iterator.next()[0]
             z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
             D_samples[i*params['batch_size']:(i+1)*params['batch_size'],0:1] = D_out_R(x_i)
             D_samples[i*params['batch_size']:(i+1)*params['batch_size'],1:2] = D_out_F(z_i)
