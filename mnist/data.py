@@ -1,21 +1,45 @@
+
 import h5py
 import numpy as np
+import pickle
 
-def get_data(batch_size=32):
+from fuel.datasets.mnist import MNIST
+from fuel.schemes import ShuffledScheme
+from fuel.streams import DataStream
+from fuel.transformers import Transformer
 
-    data = h5py.File('/u/grewalka/mnist/mnist.hdf5')
-    data = data['features'][:]
-    data = np.float32(data)
-    data = data / 255.
+import theano
+floatX = theano.config.floatX
 
-    k = data.shape[0]
-    k = k / batch_size
-    k = k * batch_size
-    k = data.shape[0] - k
+# Code taken from Devon Hjelm:
+class Rescale(Transformer):
+    def __init__(self, data_stream, min=0, max=1, use_tanh=False, **kwargs):
+        super(Rescale, self).__init__(data_stream=data_stream, produces_examples=False, **kwargs)
+        self.min = min
+        self.max = max
+        self.use_tanh = use_tanh
+    
+    def transform_batch(self, batch):
+        index = self.sources.index('features')
+        x = batch[index]
+        x = float(self.max - self.min) * (x / 255.) + self.min
+        if self.use_tanh: x = 2. * x - 1. 
+        x = x.astype(floatX)
+        batch = list(batch)
+        batch[index] = x
+        return tuple(batch)
 
-    np.random.shuffle(data)
-    data = data[k:]
-    data = np.split(data, data.shape[0] / batch_size)
-    data = np.array(data)
+def get_data(batch_size=64):
+    dataset = MNIST(which_sets=['train'])
+    scheme = ShuffledScheme(examples=dataset.num_examples, batch_size=batch_size)
+    stream = DataStream(dataset, iteration_scheme=scheme)
+    # data = stream.get_epoch_iterator(as_dict=True).next()['features']
+    stream = Rescale(stream)
+    return stream, dataset.num_examples
 
-    return data
+def get_dataset():
+    dataset = MNIST(which_sets=['train'])
+    scheme = ShuffledScheme(examples=dataset.num_examples, batch_size=dataset.num_examples)
+    stream = DataStream(dataset, iteration_scheme=scheme)
+    stream = Rescale(stream)
+    return stream, dataset.num_examples
