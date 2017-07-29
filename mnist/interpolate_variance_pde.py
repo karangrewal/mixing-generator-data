@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
 """
-Gamma Experiment:
-    Interpolate between x and g(z) and measure the output of the discriminator
+VRAL Interpolation using parzen density estimators.
 """
 
 import numpy as np
@@ -14,7 +13,14 @@ import os
 
 from data import get_data
 from model import discriminator, generator
-from real_fake import real_fake_discriminator
+
+# HELPER FUNCTION
+def log_sum_exp(x, axis=None, keepdims=False):
+    ''' Code taken from Devon Hjelm. '''
+    x_max = T.max(x, axis=axis, keepdims=True)
+    y = T.log(T.sum(T.exp(x - x_max), axis=axis, keepdims=True)) + x_max
+    y = T.sum(y, axis=axis, keepdims=keepdims)
+    return y
 
 if __name__ == '__main__':
     # place params in separate file
@@ -26,13 +32,12 @@ if __name__ == '__main__':
         'batch_size':64,
         'dim_z':100,
         'iters_D':1,
-        'iters_F':1,
-        'iters_R':1,
         'epochs':20,
+        'KL': 'inclusive',
         'load_model':False
     }
 
-    out_dir = '/u/grewalka/lasagne/gamma-experiment/variance/%d_%d_%d_1/' % (params['iters_F'], params['iters_R'], params['iters_D'])
+    out_dir = '/u/grewalka/lasagne/gamma-experiment/variance_pde/1_1/'# % (params['KL'], params['iters_D'])
     
     X = T.tensor4()
     z = T.fmatrix()
@@ -43,44 +48,28 @@ if __name__ == '__main__':
     X_fake = get_output(G)
     y_fake = get_output(D, X_fake)
 
-    # Real and fake discriminators
-    F, R = real_fake_discriminator(y_fake), real_fake_discriminator(y_real)
+    # Samples from N(0,1) and N(1,1) if using inclusive KL
+    y_0 = T.fmatrix()
+    y_1 = T.fmatrix()
 
-    # Samples from N(0,1) and N(1,1)
-    v_0 = T.fmatrix()
-    v_1 = T.fmatrix()
-
-    # Outputs of real and fake discriminators
-    r_real = get_output(R, v_1)
-    r_fake = get_output(R)
-    f_real = get_output(F, v_0)
-    f_fake = get_output(F)
+    # Mixture components for parzen density estimator
+    sigma_fake = 1.
+    sigma_real = 1.
 
     # Loss functions
-    F_loss = (T.nnet.softplus(-f_real) + T.nnet.softplus(-f_fake) + f_fake).mean()
-    R_loss = (T.nnet.softplus(-r_real) + T.nnet.softplus(-r_fake) + r_fake).mean()
-    D_loss = (T.nnet.softplus(-f_fake) + T.nnet.softplus(-r_fake)).mean()
-    G_loss = 0.5 * ((y_fake - 1) ** 2).mean()
+    if params['KL'] == 'inclusive':
+        f_mixture = (y_0 - T.shape_padleft(y_fake)) ** 2 / (2.*sigma_fake ** 2)
+        r_mixture = (y_1 - T.shape_padleft(y_real)) ** 2 / (2.*sigma_real ** 2) 
+        D_loss = -log_sum_exp(-f_mixture, axis=1).mean() - log_sum_exp(-r_mixture, axis=1).mean()
+    elif params['KL'] == 'exclusive':
+        f_mixture = (T.shape_padleft(y_fake) - (T.tile(T.shape_padaxis(y_fake, 1), (1, y_fake.shape[0]))))
+        f_mixture = f_mixture ** 2 / (2.*sigma_fake ** 2)
+        r_mixture = (T.shape_padleft(y_real) - (T.tile(T.shape_padaxis(y_real, 1), (1, y_real.shape[0]))))
+        r_mixture = r_mixture ** 2 / (2.*sigma_real ** 2)
+        D_loss = 0.5 * (y_fake ** 2 + (y_real - 1) ** 2).mean() + log_sum_exp(-f_mixture, axis=1).mean() + log_sum_exp(-r_mixture, axis=1).mean()
+    G_loss = 0.5 * ((y_fake.mean() - y_real.mean()) ** 2)
 
     # Updates to be performed during training
-    updates_F = adam(
-        loss_or_grads=F_loss,
-        params=get_all_params(F, trainable=True),
-        learning_rate=params['adam_learning_rate'],
-        beta1=params['adam_beta1'],
-        beta2=params['adam_beta2'],
-        epsilon=params['adam_epsilon']
-    )
-
-    updates_R = adam(
-        loss_or_grads=R_loss,
-        params=get_all_params(R, trainable=True),
-        learning_rate=params['adam_learning_rate'],
-        beta1=params['adam_beta1'],
-        beta2=params['adam_beta2'],
-        epsilon=params['adam_epsilon']
-    )
-
     updates_D = adam(
         loss_or_grads=D_loss,
         params=get_all_params(D, trainable=True),
@@ -99,10 +88,11 @@ if __name__ == '__main__':
         epsilon=params['adam_epsilon']
     )
 
-    train_F = function([v_0, z], outputs=F_loss, updates=updates_F, allow_input_downcast=True)
-    train_R = function([v_1, X], outputs=R_loss, updates=updates_R, allow_input_downcast=True)
-    train_D = function([X, z], outputs=D_loss, updates=updates_D, allow_input_downcast=True)
-    train_G = function([z], outputs=G_loss, updates=updates_G, allow_input_downcast=True)
+    if params['KL'] == 'inclusive':
+        train_D = function([X, z, y_0, y_1], outputs=D_loss, updates=updates_D, allow_input_downcast=True)
+    elif params['KL'] == 'exclusive':
+        train_D = function([X, z], outputs=D_loss, updates=updates_D, allow_input_downcast=True)
+    train_G = function([X, z], outputs=G_loss, updates=updates_G, allow_input_downcast=True)
     
     # Gradient Norms
     D_grad = T.grad(y_real.mean(), X)
@@ -115,22 +105,22 @@ if __name__ == '__main__':
     generate = function([z], outputs=X_fake)
     D_out = function([X], outputs=y_real)
     
-    D_grad_norms = np.zeros(shape=(100, 32))
-    D_samples = np.zeros(shape=(100, params['batch_size'], 32))
+    D_grad_norms = np.zeros(shape=(200, 32))
+    D_samples = np.zeros(shape=(200, params['batch_size'], 32))
     
     if params['load_model']:
         
         # Load parameters
-        with open(os.path.join(out_dir, 'discriminator_model.npz')) as f:
+        with open(os.path.join(out_dir, 'discriminator_model_{}.npz'.format(params['epochs']))) as f:
             D_params = np.load(f)['arr_0']
         set_all_param_values(D, [param.get_value() for param in D_params])
         
-        with open(os.path.join(out_dir, 'generator_model.npz')) as f:
+        with open(os.path.join(out_dir, 'generator_model_{}.npz'.format(params['epochs']))) as f:
             G_params = np.load(f)['arr_0']
         set_all_param_values(G, [param.get_value() for param in G_params])
         
         k = 0
-        for gamma in (np.array(range(0, 100)) / 100.):
+        for gamma in (np.array(range(-50, 150)) / 100.):
     
             for n in range(32):
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
@@ -154,38 +144,34 @@ if __name__ == '__main__':
         
         with open(os.path.join(out_dir, 'out.log'), 'w+') as f:
             f.write('gamma samples after {} epochs'.format(params['epochs']))
-            f.write('{}:{}:{}:1'.format(params['iters_F'], params['iters_R'], params['iters_D']))
+            f.write('{}:1'.format(params['iters_D']))
 
-        print('F iters: {}, R iters: {}, D iters: {}'.format(params['iters_F'], params['iters_R'], params['iters_D']))
+        print('D iters: {}'.format(params['iters_D']))
         print('Output files will be placed in: {}'.format(out_dir))
     
         for epoch in range(params['epochs']):
-            print('\nStarting Epoch {}/{} ...\n'.format(epoch+1, params['epochs']))
+            print('Starting Epoch {}/{} ...'.format(epoch+1, params['epochs']))
     
             # Training
             for i in range(num_examples / params['batch_size']):
     
                  # Train fake data discriminator
                 iterator = stream.get_epoch_iterator()
-                for k in range(params['iters_F']):
+                for k in range(params['iters_D']):
     
-                    # Train fake data discriminator
-                    v_0_i = np.float32(np.random.normal(size=(params['batch_size'],1)))
-                    z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                    train_F(v_0_i, z_i)
-                    
-                    # Train real data discriminator
-                    v_1_i = np.float32(np.random.normal(loc=1.0,size=(params['batch_size'],1)))
-                    x_i = iterator.next()[0]
-                    train_R(v_1_i, x_i)
-                    
                     # Train discriminator
+                    x_i = iterator.next()[0]
                     z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                    train_D(x_i, z_i)
+                    if params['KL'] == 'inclusive':
+                        y_0_i = np.float32(np.tile(np.random.normal(size=(params['batch_size'])),(params['batch_size'],1)))
+                        y_1_i = np.float32(np.tile(np.random.normal(loc=1.0,size=(params['batch_size'])),(params['batch_size'],1)))
+                        train_D(x_i, z_i, y_0_i, y_1_i)
+                    elif params['KL'] == 'exclusive':
+                        train_D(x_i, z_i)
                     
                 # train generator
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                train_G(z_i)
+                train_G(x_i, z_i)
     
             D_grad_norms.fill(0.)
             D_samples.fill(0.)
@@ -194,7 +180,7 @@ if __name__ == '__main__':
             # Interpolate
             # **
             k = 0
-            for gamma in (np.array(range(0, 100)) / 100.):
+            for gamma in (np.array(range(-50, 150)) / 100.):
         
                 for n in range(32):
                     z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
@@ -214,9 +200,11 @@ if __name__ == '__main__':
         
         # Save model
         D_params = get_all_params(get_all_layers(D))
-        with open(os.path.join(out_dir, 'discriminator_model.npz'), 'w+') as f:
+        with open(os.path.join(out_dir, 'discriminator_model_{}.npz'.format(params['epochs'])), 'w+') as f:
             np.savez(f, D_params)
         
         G_params = get_all_params(get_all_layers(G))
-        with open(os.path.join(out_dir, 'generator_model.npz'), 'w+') as f:
+        with open(os.path.join(out_dir, 'generator_model{}.npz'.format(params['epochs'])), 'w+') as f:
             np.savez(f, G_params)
+
+

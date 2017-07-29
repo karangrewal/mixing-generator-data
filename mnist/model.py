@@ -1,6 +1,4 @@
-"""
-Code taken from Devon Hjelm.
-"""
+
 
 from lasagne.layers import batch_norm, Conv2DLayer, DenseLayer, InputLayer, MaxPool2DLayer, ReshapeLayer, TransposedConv2DLayer
 from lasagne.nonlinearities import leaky_rectify, linear, rectify, sigmoid, LeakyRectify
@@ -60,6 +58,41 @@ class Deconv2DLayer(lasagne.layers.Layer):
             conved += self.b.dimshuffle('x', 0, 'x', 'x')
         return self.nonlinearity(conved)
 
+# Low Capacity
+def low_cap_discriminator(input_var=None, dim_h=64, use_batch_norm=False,
+                        leak=0.01):
+    if not use_batch_norm:
+        bn = lambda x: x
+    else:
+        bn = batch_norm
+    lrelu = LeakyRectify(leak)
+    
+    layer = InputLayer(shape=(None, N_CHANNELS, N_ROWS, N_COLS), input_var=input_var)
+    
+    layer = bn(Conv2DLayer(layer, 8, 5, stride=2, pad=2, nonlinearity=lrelu))
+    layer = bn(Conv2DLayer(layer, 8, 5, stride=2, pad=2, nonlinearity=lrelu))
+    layer = DenseLayer(layer, 128, nonlinearity=lrelu)
+    layer = DenseLayer(layer, 1, nonlinearity=linear)
+    return layer
+
+# High Capactiy
+def high_cap_discriminator(input_var=None, dim_h=256, use_batch_norm=False,
+                        leak=0.01):
+    if not use_batch_norm:
+        bn = lambda x: x
+    else:
+        bn = batch_norm
+    lrelu = LeakyRectify(leak)
+    
+    layer = InputLayer(shape=(None, N_CHANNELS, N_ROWS, N_COLS), input_var=input_var)
+    
+    layer = bn(Conv2DLayer(layer, dim_h, 5, stride=2, pad=2, nonlinearity=lrelu))
+    layer = bn(Conv2DLayer(layer, dim_h * 2, 5, stride=2, pad=2, nonlinearity=lrelu))
+    layer = DenseLayer(layer, 4096, nonlinearity=lrelu)
+    layer = DenseLayer(layer, 1, nonlinearity=linear)
+    return layer
+
+# Regular
 def discriminator(input_var=None, dim_h=64, use_batch_norm=False,
                         leak=0.01):
     if not use_batch_norm:

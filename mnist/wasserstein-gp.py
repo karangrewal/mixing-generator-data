@@ -27,7 +27,7 @@ if __name__ == '__main__':
         'lambda':10
     }
 
-    out_dir = '/u/grewalka/lasagne/wasserstein-gp/%d_1_bn_not_rescaled/' % (params['discriminator_iters'])
+    out_dir = '/u/grewalka/lasagne/wasserstein-gp/%d_1_bn/' % (params['discriminator_iters'])
 
     with open(os.path.join(out_dir, 'out.log'), 'w+') as f:
         f.write('WGAN-GP\n')
@@ -50,7 +50,7 @@ if __name__ == '__main__':
     D_out_F = function([z], outputs=y_fake)
 
     # Gradient Penalty; might be scaled by factor `epsilon`
-    penalty = np.sqrt((T.grad(y_inter.mean(), X)**2).sum(axis=(1,2,3))) # Norm
+    penalty = np.sqrt((T.grad(y_inter.sum(), X)**2).sum(axis=(1,2,3))) # Norm
     penalty = (penalty - 1) ** 2
 
     # WGAN-GP loss
@@ -78,11 +78,19 @@ if __name__ == '__main__':
     train_D = function([X, z, epsilon],outputs=D_loss,updates=updates_D,allow_input_downcast=True)
     train_G = function([z],outputs=G_loss,updates=updates_G,allow_input_downcast=True)
 
+    # Gradient Norms
+    # D_grad_real = T.grad(y_real.mean(), X)
+    # D_grad_fake = T.grad(y_fake.mean(), X_fake)
+    
+    # # Value of E||grad(dL/dx)||^2
+    # D_grad_real_norm_value = function([X],outputs=(D_grad_real**2).sum(axis=(1,2,3)).mean())
+    # D_grad_fake_norm_value = function([z],outputs=(D_grad_fake**2).sum(axis=(1,2,3)).mean())
+    
     # Load data
     stream, num_examples = get_data(params['batch_size'])
 
     print('D_iters: {}'.format(params['discriminator_iters']))
-
+    qr = 0
     for epoch in range(params['epochs']):
         print('Starting Epoch {}/{} ...'.format(epoch+1, params['epochs']))
         
@@ -103,9 +111,14 @@ if __name__ == '__main__':
             for k in range(params['discriminator_iters']):
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],100)))# CHANGE TO DIMZ
                 x_i = iterator.next()[0]
+                qr += 1                 
+                with open(os.path.join(out_dir, 'x_%d.npz' % qr), 'w+') as f:
+                    np.savez(f, x_i)
                 epsilon_i = np.random.uniform()
                 
                 D_losses[i,k] = train_D(x_i, z_i, epsilon_i)
+                # D_grad_real_norms[i,k] = D_grad_real_norm_value(x_i)
+                # D_grad_fake_norms[i,k] = D_grad_fake_norm_value(z_i)
 
             # train generator
             z_i = np.float32(np.random.normal(size=(params['batch_size'],100)))# CHANGE TO DIMZ
@@ -144,3 +157,9 @@ if __name__ == '__main__':
         with open(os.path.join(out_dir, 'generator_model_%d.npz' % params['epochs']), 'w+') as f:
             np.savez(f, G_params)
         
+        with open(os.path.join(out_dir, 'weights_%d.txt' % (epoch+1)), 'w+') as f:
+            p = get_all_params(D)
+            f.write('min: {} max: {}\n'.format(np.min(p[0].get_value()), np.max(p[0].get_value())))
+            f.write('min: {} max: {}\n'.format(np.min(p[2].get_value()), np.max(p[2].get_value())))
+            f.write('min: {} max: {}\n'.format(np.min(p[4].get_value()), np.max(p[4].get_value())))
+            f.write('min: {} max: {}\n'.format(np.min(p[6].get_value()), np.max(p[6].get_value())))

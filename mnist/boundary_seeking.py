@@ -35,7 +35,7 @@ if __name__ == '__main__':
     X = T.tensor4()
     z = T.fmatrix()
 
-    D, G = discriminator(X, use_batch_norm=False), generator(z, use_batch_norm=True)
+    D, G = discriminator(X, use_batch_norm=True), generator(z, use_batch_norm=True)
 
     y_real = get_output(D)
     X_fake = get_output(G)

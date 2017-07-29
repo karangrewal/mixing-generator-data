@@ -26,12 +26,12 @@ if __name__ == '__main__':
         'adam_learning_rate':0.0001,
         'batch_size':64,
         'dim_z':100,
-        'iters_G':1,
+        'iters_G':4,
         'epochs':200,
         'load_generator':False
     }
 
-    out_dir = '/u/grewalka/lasagne/comparison/gen_%d/' % (params['iters_G'])
+    out_dir = '/u/grewalka/lasagne/comparison/gen_%d/' % params['iters_G']
 
     ###########################################################################
     ########################### [1] Train Generator ###########################
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     
         print('Output files will be placed in: {}'.format(out_dir))
     
-        for epoch in range(params['iters_G']):
+        for epoch in range(1):
             print('\nTraining Generator. Epoch {}/20 ...\n'.format(epoch+1))
             np.random.shuffle(batches)
     
@@ -95,7 +95,7 @@ if __name__ == '__main__':
             x_samples = generate(z_i)
             with open(os.path.join(out_dir, 'generated_samples.npz'), 'w+') as f:
                 np.savez(f, x_samples)
-            exit(0)
+                
         # Save Generator
         G_params = get_all_params(get_all_layers(G))
         with open(os.path.join(out_dir, 'generator_model.npz'), 'w+') as f:
@@ -111,7 +111,7 @@ if __name__ == '__main__':
     X_variance, z_variance = T.tensor4(), T.fmatrix()
     
     # Discriminators
-    D_regular, D_lsgan, D_wgan, D_variance = discriminator(X_regular), discriminator(X_lsgan), discriminator(X_wgan), discriminator(X_variance)
+    D_regular, D_lsgan, D_wgan, D_variance = discriminator(X_regular, use_batch_norm=True), discriminator(X_lsgan, use_batch_norm=True), discriminator(X_wgan, use_batch_norm=True), discriminator(X_variance, use_batch_norm=True)
     
     y_real_regular, X_fake_regular = get_output(D_regular), get_output(G)
     y_real_lsgan, X_fake_lsgan = get_output(D_lsgan), get_output(G)
@@ -191,13 +191,13 @@ if __name__ == '__main__':
     R_grad_fake = T.grad(r_fake.mean(), X_variance)
 
     # Gradient Norm Functions
-    D_grad_fake_regular_norm_value = function([z],outputs=(D_grad_fake_regular**2).sum(axis=(0,1,2,3)))
-    D_grad_fake_lsgan_norm_value = function([z],outputs=(D_grad_fake_lsgan**2).sum(axis=(0,1,2,3)))
-    D_grad_fake_wgan_norm_value = function([z],outputs=(D_grad_fake_wgan**2).sum(axis=(0,1,2,3)))
+    D_grad_fake_regular_norm_value = function([z],outputs=(D_grad_fake_regular**2).sum(axis=(1,2,3)).mean())
+    D_grad_fake_lsgan_norm_value = function([z],outputs=(D_grad_fake_lsgan**2).sum(axis=(1,2,3)).mean())
+    D_grad_fake_wgan_norm_value = function([z],outputs=(D_grad_fake_wgan**2).sum(axis=(1,2,3)).mean())
     
-    D_grad_fake_variance_norm_value = function([z],outputs=(D_grad_fake_variance**2).sum(axis=(0,1,2,3)))
-    F_grad_fake_norm_value = function([z],outputs=(F_grad_fake**2).sum(axis=(0,1,2,3)))
-    R_grad_fake_norm_value = function([X_variance],outputs=(R_grad_fake**2).sum(axis=(0,1,2,3)))
+    D_grad_fake_variance_norm_value = function([z],outputs=(D_grad_fake_variance**2).sum(axis=(1,2,3)).mean())
+    F_grad_fake_norm_value = function([z],outputs=(F_grad_fake**2).sum(axis=(1,2,3)).mean())
+    R_grad_fake_norm_value = function([X_variance],outputs=(R_grad_fake**2).sum(axis=(1,2,3)).mean())
 
     # Sampling functions
     D_regular_out_R = function([X_regular], outputs=y_real_regular)
@@ -285,7 +285,7 @@ if __name__ == '__main__':
             np.random.shuffle(batches)
             x_i = batches[np.random.randint(batches.shape[0])]
             z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-            D_losses_4[i] = train_D_wgan(x_i, z_i)
+            D_losses_4[i] = train_D_variance(x_i, z_i)
             D_grad_norms_4[i] = D_grad_fake_wgan_norm_value(z_i)
 
         # Sample from D
@@ -340,3 +340,4 @@ if __name__ == '__main__':
             np.savez(f, F_grad_fake_norms)
         with open(os.path.join(out_dir, 'variance', '%d_R_grad_norms.npz' % (epoch+1)), 'w+') as f:
             np.savez(f, R_grad_fake_norms)
+
