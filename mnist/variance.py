@@ -159,30 +159,22 @@ if __name__ == '__main__':
         for i in range(num_examples / params['batch_size']):
             
             iterator = stream.get_epoch_iterator()
-            x_i = iterator.next()[0]
-
-            # Train fake data discriminator
-            v_0_i = np.float32(np.random.normal(size=(params['batch_size'],1)))
-            z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-            F_losses[i,0] = train_F(v_0_i, z_i)
-            F_grad_fake_norms[i,0] = F_grad_fake_norm_value(z_i)
-
-            # Train real data discriminator
-            v_1_i = np.float32(np.random.normal(loc=1.0,size=(params['batch_size'],1)))
-            x_i = iterator.next()[0]
-            R_losses[i,0] = train_R(v_1_i, x_i)
-            R_grad_fake_norms[i,0] = R_grad_fake_norm_value(x_i)
-
-            iterator = stream.get_epoch_iterator()
             for k in range(params['iters_D']):
-
-                # Train discriminator
-                x_i = iterator.next()[0]
+            
+                # Train fake data discriminator
+                v_0_i = np.float32(np.random.normal(size=(params['batch_size'],1)))
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                D_losses[i,k] = train_D(x_i, z_i)
-                D_grad_real_norms[i,k] = D_grad_real_norm_value(x_i)
-                D_grad_fake_norms[i,k] = D_grad_fake_norm_value(z_i)
-
+                train_F(v_0_i, z_i)
+                
+                # Train real data discriminator
+                v_1_i = np.float32(np.random.normal(loc=1.0,size=(params['batch_size'],1)))
+                x_i = iterator.next()[0]
+                train_R(v_1_i, x_i)
+                
+                # Train discriminator
+                z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
+                train_D(x_i, z_i)
+            
             # train generator
             z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
             G_losses[i] = train_G(z_i)
