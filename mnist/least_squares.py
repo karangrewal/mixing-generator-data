@@ -22,20 +22,20 @@ if __name__ == '__main__':
         'adam_epsilon':3e-6,
         'adam_learning_rate':0.0001,
         'batch_size': 64,
-        'discriminator_iters':1,
+        'iters_D':50,
         'epochs':50,
     }
 
-    out_dir = '/u/grewalka/lasagne/least_squares/%d_1/' % (params['discriminator_iters'])
+    out_dir = '/u/grewalka/lasagne/least_squares/%d_1/' % (params['iters_D'])
 
     with open(os.path.join(out_dir, 'out.log'), 'w+') as f:
         f.write('Least Squares GAN\n')
-        f.write('D iters: {}'.format(params['discriminator_iters']))
+        f.write('D iters: {}'.format(params['iters_D']))
 
     X = T.tensor4()
     z = T.fmatrix()
 
-    D, G = discriminator(X, use_batch_norm=False), generator(z, use_batch_norm=True)
+    D, G = discriminator(X, use_batch_norm=True), generator(z, use_batch_norm=True)
 
     y_real = get_output(D)
     X_fake = get_output(G)
@@ -87,37 +87,35 @@ if __name__ == '__main__':
     # G_grad_norm_value = function([z],outputs=(G_grad**2).sum(axis=(0,1,2,3)))
 
     # Load data
-    batches = get_data(params['batch_size'])
+    stream, num_examples = get_data(params['batch_size'])
 
     # Sampling functions
     generate = function([z], outputs=X_fake)
     D_out_R = function([X], outputs=y_real)
     D_out_F = function([z], outputs=y_fake)
 
-    print('D_iters: {}'.format(params['discriminator_iters']))
+    print('D_iters: {}'.format(params['iters_D']))
     print('Output files will be placed in: {}'.format(out_dir))
 
     for epoch in range(params['epochs']):
-        print('\nStarting Epoch {}/{} ...\n'.format(epoch+1, params['epochs']))
+        print('Starting Epoch {}/{} ...'.format(epoch+1, params['epochs']))
         
         # Keep track of losses and gradient norms
-        D_losses = np.zeros(shape=(batches.shape[0], params['discriminator_iters']))
-        G_losses = np.zeros(shape=(batches.shape[0]))
-        D_grad_real_norms = np.zeros(shape=(batches.shape[0], params['discriminator_iters']))
-        D_grad_fake_norms = np.zeros(shape=(batches.shape[0], params['discriminator_iters']))
-        # G_grad_norms = np.zeros(shape=(batches.shape[0]))
-
+        D_losses = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
+        G_losses = np.zeros(shape=(num_examples / params['batch_size']))
+        D_grad_real_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
+        D_grad_fake_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
+        
         # D samples
-        D_samples = np.zeros(shape=(batches.shape[0]*params['batch_size'], 2))
+        D_samples = np.zeros(shape=((num_examples / params['batch_size'])*params['batch_size'] , 2))
         D_samples.fill(99.)
 
-        np.random.shuffle(batches)
-
-        for i in range(batches.shape[0]):
+        for i in range(num_examples / params['batch_size']):
 
             # Train Discriminator
-            for k in range(params['discriminator_iters']):
-                x_i = batches[np.random.randint(batches.shape[0])]
+            iterator = stream.get_epoch_iterator()
+            for k in range(params['iters_D']):
+                x_i = iterator.next()[0]
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],100)))# CHANGE TO DIMZ
                 D_losses[i,k] = train_D(x_i, z_i)
                 D_grad_real_norms[i,k] = D_grad_real_norm_value(x_i)
@@ -135,8 +133,9 @@ if __name__ == '__main__':
             np.savez(f, x_samples, delimiter=',')
 
         # Sample from D
-        for i in range(batches.shape[0]):
-            x_i = batches[i]
+        iterator = stream.get_epoch_iterator()
+        for i in range(num_examples / params['batch_size']):
+            x_i = iterator.next()[0]
             z_i = np.float32(np.random.normal(size=(params['batch_size'],100)))
             D_samples[i*params['batch_size']:(i+1)*params['batch_size'],0:1] = D_out_R(x_i)
             D_samples[i*params['batch_size']:(i+1)*params['batch_size'],1:2] = D_out_F(z_i)
