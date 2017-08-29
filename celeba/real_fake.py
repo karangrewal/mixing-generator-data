@@ -8,8 +8,8 @@ from lasagne.nonlinearities import linear
 
 BATCH_SIZE = 64
 N_CHANNELS = 3
-N_ROWS = 32
-N_COLS = 32
+N_ROWS = 64
+N_COLS = 64
 DIM_H = 128
 DIM_Z = 100
 
@@ -19,4 +19,6 @@ def real_fake_discriminator(input_var=None):
 	layer = DenseLayer(layer, 28)
 	layer = DenseLayer(layer, 1, nonlinearity=linear)
 	return layer
+
+
 

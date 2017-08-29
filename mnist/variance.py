@@ -18,7 +18,7 @@ from model import discriminator, generator
 from real_fake import real_fake_discriminator
 
 if __name__ == '__main__':
-    # place params in separate file
+    print('starting')
     params = {
         'adam_beta1':0.5,
         'adam_beta2':0.999,
@@ -27,14 +27,13 @@ if __name__ == '__main__':
         'batch_size':64,
         'D_loss': 'proxy',
         'dim_z':100,
-        'iters_D':50,
-        'iters_F':50,
-        'iters_R':50,
-        'epochs':30
+        'iters_D':1,
+        'iters_F':1,
+        'iters_R':1,
+        'epochs':35
     }
     
-    # out_dir = '/u/grewalka/lasagne/variance_%s/%d_%d_%d_1/' % (params['D_loss'], params['iters_F'], params['iters_R'], params['iters_D'])
-    out_dir = '/u/grewalka/lasagne/variance/50_1/'# % (params['D_loss'])
+    out_dir = '/u/grewalka/lasagne/variance/%d_%d_%d_1/' % (params['iters_F'], params['iters_R'], params['iters_D'])
     
     with open(os.path.join(out_dir, 'out.log'), 'w+') as f:
         f.write('Variance-maximizing GAN\n')
@@ -114,27 +113,26 @@ if __name__ == '__main__':
     train_G = function([z], outputs=G_loss, updates=updates_G, allow_input_downcast=True)
 
     # Gradient Norms
-    F_grad_fake = T.grad(f_fake.mean(), X_fake)
-    R_grad_fake = T.grad(r_fake.mean(), X)
     D_grad_real = T.grad(y_real.mean(), X)
     D_grad_fake = T.grad(y_fake.mean(), X_fake)
-    # G_grad = T.grad(G_loss, X_fake)
+    G_loss_grad = T.grad(G_loss, X_fake)
+    G_loss_grad_norm_value = function([z],outputs=(G_loss_grad**2).sum(axis=(1,2,3)).mean())
+    D_loss_grad = T.grad(D_loss, X_fake)
+    D_loss_grad_norm_value = function([X, z],outputs=(D_loss_grad**2).sum(axis=(1,2,3)).mean())
 
     # Value of E||dF/dx||^2, E||dR/dx||^2, E||dD/dx||^2
-    F_grad_fake_norm_value = function([z],outputs=(F_grad_fake**2).sum(axis=(1,2,3)).mean())
-    R_grad_fake_norm_value = function([X],outputs=(R_grad_fake**2).sum(axis=(1,2,3)).mean())
     D_grad_real_norm_value = function([X],outputs=(D_grad_real**2).sum(axis=(1,2,3)).mean())
     D_grad_fake_norm_value = function([z],outputs=(D_grad_fake**2).sum(axis=(1,2,3)).mean())
     
-    # Load data
-    stream, num_examples = get_data(params['batch_size'])
-
     # Sampling functions
     generate = function([z], outputs=X_fake)
     D_out_R = function([X], outputs=y_real)
     D_out_F = function([z], outputs=y_fake)
+    
+    # Load data
+    stream, num_examples = get_data(params['batch_size'])
 
-    print('F iters: {}, R iters: {}, D iters: {}'.format(params['iters_F'], params['iters_R'], params['iters_D']))
+    print('VRAL with meta-discriminators, training ratio = {}:{}:{}:1'.format(params['iters_F'], params['iters_R'], params['iters_D']))
     print('Output files will be placed in: {}'.format(out_dir))
 
     for epoch in range(params['epochs']):
@@ -146,14 +144,13 @@ if __name__ == '__main__':
         D_losses = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
         G_losses = np.zeros(shape=(num_examples / params['batch_size']))
 
-        F_grad_fake_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_F']))
-        R_grad_fake_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_R']))
         D_grad_real_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
         D_grad_fake_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
-        # G_grad_norms = np.zeros(shape=(params['epochs'], batches.shape[0]))
-
+        
+        G_loss_grad_norms = np.zeros(shape=(num_examples / params['batch_size']))
+        D_loss_grad_norms = np.zeros(shape=(num_examples / params['batch_size'], params['iters_D']))
+        
         D_samples = np.zeros(shape=((num_examples / params['batch_size'])*params['batch_size'] , 2))
-        D_samples.fill(99.)
         
         # Training
         for i in range(num_examples / params['batch_size']):
@@ -174,17 +171,20 @@ if __name__ == '__main__':
                 # Train discriminator
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
                 train_D(x_i, z_i)
+                D_grad_real_norms[i,k] = D_grad_real_norm_value(x_i)
+                D_grad_fake_norms[i,k] = D_grad_fake_norm_value(z_i)
+                D_loss_grad_norms[i,k] = D_loss_grad_norm_value(x_i, z_i)
             
             # train generator
             z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
             G_losses[i] = train_G(z_i)
-            # G_grad_norms[i] = G_grad_norm_value(z_i)
+            G_loss_grad_norms[i] = G_loss_grad_norm_value(z_i)
 
         # Generate samples from G
         z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
         x_samples = generate(z_i)
         with open(os.path.join(out_dir, 'x_samples_%d.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, x_samples, delimiter=',')
+            np.savez(f, x_samples)
 
         # Sample from D
         iterator = stream.get_epoch_iterator()
@@ -196,24 +196,19 @@ if __name__ == '__main__':
 
         # Save Results
         with open(os.path.join(out_dir, 'D_samples_%d.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, D_samples, delimiter=',')
-
-        with open(os.path.join(out_dir, '%d_F_loss.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, F_losses, delimiter=',')
-        with open(os.path.join(out_dir, '%d_R_loss.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, R_losses, delimiter=',')
+            np.savez(f, D_samples)
+        
         with open(os.path.join(out_dir, '%d_D_loss.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, D_losses, delimiter=',')
+            np.savez(f, D_losses)
         with open(os.path.join(out_dir, '%d_G_loss.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, G_losses, delimiter=',')
+            np.savez(f, G_losses)
 
-        with open(os.path.join(out_dir, '%d_F_grad_fake_norms.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, F_grad_fake_norms, delimiter=',')
-        with open(os.path.join(out_dir, '%d_R_grad_fake_norms.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, R_grad_fake_norms, delimiter=',')
         with open(os.path.join(out_dir, '%d_D_grad_real_norms.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, D_grad_real_norms, delimiter=',')
+            np.savez(f, D_grad_real_norms)
         with open(os.path.join(out_dir, '%d_D_grad_fake_norms.npz' % (epoch+1)), 'w+') as f:
-            np.savez(f, D_grad_fake_norms, delimiter=',')
-        # with open(os.path.join(out_dir, 'G_grad_norms.npz'), 'w+') as f:
-        #     np.savez(f, G_grad_norms, delimiter=',')
+            np.savez(f, D_grad_fake_norms)
+        
+        with open(os.path.join(out_dir, 'D_loss_grad_norms_%d.npz' % (epoch+1)), 'w+') as f:
+            np.savez(f, D_loss_grad_norms)
+        with open(os.path.join(out_dir, 'G_loss_grad_norms_%d.npz' % (epoch+1)), 'w+') as f:
+            np.savez(f, G_loss_grad_norms)

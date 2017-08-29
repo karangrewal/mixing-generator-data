@@ -22,11 +22,12 @@ if __name__ == '__main__':
         'adam_epsilon':3e-6,
         'adam_learning_rate':0.0001,
         'batch_size': 64,
+        'clipping_param':0.1,
         'discriminator_iters':1,
         'epochs':30,
     }
 
-    out_dir = '/u/grewalka/lasagne/wasserstein/1_1/'# % (params['discriminator_iters'])
+    out_dir = '/u/grewalka/lasagne/wasserstein/1_1_0.1/'# % (params['discriminator_iters'])
 
     with open(os.path.join(out_dir, 'out.log'), 'w+') as f:
         f.write('Wasserstein GAN\n')
@@ -56,7 +57,7 @@ if __name__ == '__main__':
 
     # Weight clipping
     for key in updates_D.keys():
-        updates_D[key] = T.clip(updates_D[key], -0.01, 0.01)
+        updates_D[key] = T.clip(updates_D[key], -1* params['clipping_param'], params['clipping_param'])
 
     updates_G = adam(
         loss_or_grads=G_loss,

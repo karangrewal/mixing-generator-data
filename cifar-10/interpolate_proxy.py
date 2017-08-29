@@ -1,15 +1,7 @@
 #!/usr/bin/env python
 
 """
-VRAL Interpolation: (1) rescaled and fitted to a single gaussian (2) parzen density estimators
-
-KL:
-    inclusive : KL( N(.,1) || p(x) )
-    exclusive : KL( p(x) || N(.,1) )
-
-G_loss_type:
-    1: G's objective is to maximize E_{x~P_fake} [D(x)]
-    2: G's objective is to minimize ( E_{x~P_fake} [D(x)] - E_{x~P_real} [D(x)])^2
+Interpolate BGAN.
 """
 
 import numpy as np
@@ -21,16 +13,10 @@ import os
 
 from data import get_data
 from model import discriminator, generator
-
-# HELPER FUNCTION
-def log_sum_exp(x, axis=None, keepdims=False):
-    ''' Code taken from Devon Hjelm. '''
-    x_max = T.max(x, axis=axis, keepdims=True)
-    y = T.log(T.sum(T.exp(x - x_max), axis=axis, keepdims=True)) + x_max
-    y = T.sum(y, axis=axis, keepdims=keepdims)
-    return y
+from real_fake import real_fake_discriminator
 
 if __name__ == '__main__':
+    # place params in separate file
     params = {
         'adam_beta1':0.5,
         'adam_beta2':0.999,
@@ -38,58 +24,25 @@ if __name__ == '__main__':
         'adam_learning_rate':0.0001,
         'batch_size':64,
         'dim_z':100,
-        'G_loss_type':1,
-        'iters_D':1,
+        'discriminator_iters':1,
         'epochs':20,
-        'KL': 'inclusive',
-        'load_model':False,
-        'rescale_both':False,
-        'wasserstein':1
+        'load_model':False
     }
 
-    out_dir = '/u/grewalka/lasagne/gamma-experiment/variance_pde_sg/%s/%d_1/' % (params['KL'], params['iters_D'])
+    out_dir = '/u/grewalka/lasagne/gamma-experiment/proxy/%d_1/' % (params['discriminator_iters'])
     
     X = T.tensor4()
     z = T.fmatrix()
 
     D, G = discriminator(X, use_batch_norm=True), generator(z, use_batch_norm=True)
-    
+
     y_real = get_output(D)
     X_fake = get_output(G)
     y_fake = get_output(D, X_fake)
-
-    if params['rescale_both']:
-        y_real_rescaled = y_real - y_real.mean()
-    else:
-        y_real_rescaled = y_real
-    y_fake_rescaled = y_fake - y_fake.mean()
-
-    # Samples from N(0,1) if using inclusive KL
-    y_0 = T.fmatrix()
-
-    # Mixture components for parzen density estimator
-    sigma_fake = 1.
-    sigma_real = 1.
-
-    # Maximize Wasserstein-1 or Wasserstein-2 between y_real and y_fake distributions
-    if params['wasserstein'] == 1:
-        w_term = y_real.mean() - y_fake.mean()
-    elif params['wasserstein'] == 2:
-        w_term = T.sqrt((y_real.mean() - y_fake.mean()) ** 2)
-
-    # Loss functions
-    if params['KL'] == 'inclusive':
-        f_mixture = (y_0 - T.shape_padleft(y_fake_rescaled)) ** 2 / (2.*sigma_fake ** 2)
-        r_mixture = (y_0 - T.shape_padleft(y_real_rescaled)) ** 2 / (2.*sigma_real ** 2) 
-        D_loss = -log_sum_exp(-f_mixture, axis=1).mean() - log_sum_exp(-r_mixture, axis=1).mean() - w_term
-    elif params['KL'] == 'exclusive':
-        print('P.D.E. with Single Gaussian, Exclusive KL loss function not available.')
-        exit(0)
-
-    if params['G_loss_type'] == 1:
-        G_loss = -(y_fake).mean()
-    elif params['G_loss_type'] == 2:
-        G_loss = (y_fake.mean() - y_real.mean()) ** 2
+    
+    # Proxy loss
+    D_loss = (y_fake + T.nnet.softplus(-y_real) + T.nnet.softplus(-y_fake)).mean()
+    G_loss = (T.nnet.softplus(-y_fake)).mean() # -log D trick
 
     # Updates to be performed during training
     updates_D = adam(
@@ -110,16 +63,9 @@ if __name__ == '__main__':
         epsilon=params['adam_epsilon']
     )
 
-    if params['KL'] == 'inclusive':
-        train_D = function([X, z, y_0], outputs=D_loss, updates=updates_D, allow_input_downcast=True)
-    elif params['KL'] == 'exclusive':
-        train_D = function([X, z], outputs=D_loss, updates=updates_D, allow_input_downcast=True)
+    train_D = function([X, z], outputs=D_loss, updates=updates_D, allow_input_downcast=True)
+    train_G = function([z], outputs=G_loss, updates=updates_G, allow_input_downcast=True)
     
-    if params['G_loss_type'] == 1:
-        train_G = function([z], outputs=G_loss, updates=updates_G, allow_input_downcast=True)
-    elif params['G_loss_type'] == 2:
-        train_G = function([X, z], outputs=G_loss, updates=updates_G, allow_input_downcast=True)
-
     # Gradient Norms
     D_grad = T.grad(y_real.mean(), X)
     D_grad_norm_value = function([X],outputs=(D_grad**2).sum(axis=(1,2,3)).mean())
@@ -170,9 +116,9 @@ if __name__ == '__main__':
         
         with open(os.path.join(out_dir, 'out.log'), 'w+') as f:
             f.write('gamma samples after {} epochs'.format(params['epochs']))
-            f.write('{}:1'.format(params['iters_D']))
+            f.write('{}:1'.format(params['discriminator_iters']))
 
-        print('D iters: {}'.format(params['iters_D']))
+        print('D_iters: {}'.format(params['discriminator_iters']))
         print('Output files will be placed in: {}'.format(out_dir))
     
         for epoch in range(params['epochs']):
@@ -183,23 +129,16 @@ if __name__ == '__main__':
     
                  # Train fake data discriminator
                 iterator = stream.get_epoch_iterator()
-                for k in range(params['iters_D']):
+                for k in range(params['discriminator_iters']):
     
                     # Train discriminator
                     x_i = iterator.next()[0]
                     z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                    if params['KL'] == 'inclusive':
-                        y_0_i = np.float32(np.tile(np.random.normal(size=(params['batch_size'])),(params['batch_size'],1)))
-                        train_D(x_i, z_i, y_0_i)
-                    elif params['KL'] == 'exclusive':
-                        train_D(x_i, z_i)
+                    train_D(x_i, z_i)
                     
                 # train generator
                 z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
-                if params['G_loss_type'] == 1:
-                    train_G(z_i)
-                elif params['G_loss_type'] == 2:
-                    train_G(x_i, z_i)
+                train_G(z_i)
     
             D_grad_norms.fill(0.)
             D_samples.fill(0.)
@@ -234,5 +173,6 @@ if __name__ == '__main__':
         G_params = get_all_params(get_all_layers(G))
         with open(os.path.join(out_dir, 'generator_model_{}.npz'.format(params['epochs'])), 'w+') as f:
             np.savez(f, G_params)
+
 
 

@@ -162,8 +162,8 @@ if __name__ == '__main__':
                     x_real = iterator.next()[0]
                     
                     x_hat = np.float32(gamma * x_fake + (1.-gamma) * x_real)
-                    D_samples[k,:, n] = D_out(x_hat).reshape(params['batch_size'])
-                    D_grad_norms[k, n] = D_grad_norm_value(x_hat)
+                    D_samples[k,:,n] = D_out(x_hat).reshape(params['batch_size'])
+                    D_grad_norms[k,n] = D_grad_norm_value(x_hat)
                 k += 1
                 
             with open(os.path.join(out_dir, 'D_samples_gamma_{}.npz'.format(epoch+1)), 'w+') as f:
@@ -179,6 +179,5 @@ if __name__ == '__main__':
         G_params = get_all_params(get_all_layers(G))
         with open(os.path.join(out_dir, 'generator_model_{}.npz'.format(params['epochs'])), 'w+') as f:
             np.savez(f, G_params)
-
 
 

@@ -22,8 +22,8 @@ if __name__ == '__main__':
         'adam_epsilon':3e-6,
         'adam_learning_rate':0.0001,
         'batch_size': 64,
-        'iters_D':50,
-        'epochs':50,
+        'iters_D':1,
+        'epochs':30,
     }
 
     out_dir = '/u/grewalka/lasagne/least_squares/%d_1/' % (params['iters_D'])

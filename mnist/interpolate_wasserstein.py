@@ -15,6 +15,12 @@ import os
 from data import get_data
 from model import low_cap_discriminator, high_cap_discriminator, discriminator, generator
 
+def l2(x1, x2):
+    """
+    L2 pixel-wise distance between corresponding images in batches x1, x2.
+    """
+    return np.sum((x1 - x2)**2, axis=(1,2,3))
+
 if __name__ == '__main__':
     # place params in separate file
     params = {
@@ -23,13 +29,14 @@ if __name__ == '__main__':
         'adam_epsilon':3e-6,
         'adam_learning_rate':0.0001,
         'batch_size':64,
+        'clipping_param':0.1,
         'dim_z':100,
         'discriminator_iters':1,
         'epochs':20,
         'load_model':False
     }
 
-    out_dir = '/u/grewalka/lasagne/gamma-experiment/wasserstein/1_1/'# % (params['discriminator_iters'])
+    out_dir = '/u/grewalka/lasagne/gamma-experiment/wasserstein/1_1_0.1/'# % (params['discriminator_iters'])
     
     X = T.tensor4()
     z = T.fmatrix()
@@ -56,7 +63,7 @@ if __name__ == '__main__':
 
     # Weight clipping
     for key in updates_D.keys():
-        updates_D[key] = T.clip(updates_D[key], -0.01, 0.01)
+        updates_D[key] = T.clip(updates_D[key], -1*params['clipping_param'], params['clipping_param'])
 
     updates_G = adam(
         loss_or_grads=G_loss,
@@ -152,7 +159,7 @@ if __name__ == '__main__':
             # **
             k = 0
             for gamma in (np.array(range(-50, 150)) / 100.):
-        
+            
                 for n in range(32):
                     z_i = np.float32(np.random.normal(size=(params['batch_size'],params['dim_z'])))
                     x_fake = generate(z_i)
@@ -169,13 +176,12 @@ if __name__ == '__main__':
             with open(os.path.join(out_dir, 'D_grad_norms_gamma_{}.npz'.format(epoch+1)), 'w+') as f:
                 np.savez(f, D_grad_norms)
         
-        # Save model
-        D_params = get_all_params(get_all_layers(D))
-        with open(os.path.join(out_dir, 'discriminator_model_{}.npz'.format(params['epochs'])), 'w+') as f:
-            np.savez(f, D_params)
-        
-        G_params = get_all_params(get_all_layers(G))
-        with open(os.path.join(out_dir, 'generator_model_{}.npz'.format(params['epochs'])), 'w+') as f:
-            np.savez(f, G_params)
-
+            # Save model
+            D_params = get_all_params(get_all_layers(D))
+            with open(os.path.join(out_dir, 'discriminator_model_{}.npz'.format(epoch+1)), 'w+') as f:
+                np.savez(f, D_params)
+            
+            G_params = get_all_params(get_all_layers(G))
+            with open(os.path.join(out_dir, 'generator_model_{}.npz'.format(epoch+1)), 'w+') as f:
+                np.savez(f, G_params)
 
