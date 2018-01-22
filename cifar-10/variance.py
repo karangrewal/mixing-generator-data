@@ -137,20 +137,8 @@ if __name__ == '__main__':
 
     # Gradient Norms
     G_loss_grad_norm_val = function([z],outputs=(T.grad(G_loss, X_fake)**2).sum(axis=(1,2,3)).mean())
-    G_loss_grad_norm_l1_val = function([z],outputs=(T.grad(G_loss, G1)**2).sum(axis=(1)).mean())
-    G_loss_grad_norm_l2_val = function([z],outputs=(T.grad(G_loss, G2)**2).sum(axis=(1)).mean())
-    G_loss_grad_norm_l3_val = function([z],outputs=(T.grad(G_loss, G3)**2).sum(axis=(1,2,3)).mean())
-    G_loss_grad_norm_l4_val = function([z],outputs=(T.grad(G_loss, G4)**2).sum(axis=(1,2,3)).mean())
-    G_loss_grad_norm_l5_val = function([z],outputs=(T.grad(G_loss, G5)**2).sum(axis=(1,2,3)).mean())
-    G_loss_grad_norm_l6_val = function([z],outputs=(T.grad(G_loss, G6)**2).sum(axis=(1,2,3)).mean())
-
     D_loss_grad_norm_val = function([X, z],outputs=(T.grad(D_loss, X_fake)**2).sum(axis=(1,2,3)).mean())
-    D_loss_grad_norm_l1_val = function([X, z],outputs=(T.grad(D_loss, D1)**2).sum(axis=(1,2,3)).mean())
-    D_loss_grad_norm_l2_val = function([X, z],outputs=(T.grad(D_loss, D2)**2).sum(axis=(1,2,3)).mean())
-    D_loss_grad_norm_l3_val = function([X, z],outputs=(T.grad(D_loss, D3)**2).sum(axis=(1,2,3)).mean())
-    D_loss_grad_norm_l4_val = function([X, z],outputs=(T.grad(D_loss, D4)**2).sum(axis=(1,2,3)).mean())
-    D_loss_grad_norm_l5_val = function([X, z],outputs=(T.grad(D_loss, D5)**2).sum(axis=(1,2,3)).mean())
-
+    
     # Intermediate activations
     D_out_R = function([X], outputs=y_real)
     D_out_F = function([z], outputs=y_fake)
@@ -217,9 +205,8 @@ if __name__ == '__main__':
             D_samples[i*BATCH_SIZE:(i+1)*BATCH_SIZE,0:1] = D_out_R(x_i)
             D_samples[i*BATCH_SIZE:(i+1)*BATCH_SIZE,1:2] = D_out_F(z_i)
 
-            D_loss_grad_norms, D_loss_grad_norms_l1, D_loss_grad_norms_l2, D_loss_grad_norms_l3, D_loss_grad_norms_l4, D_loss_grad_norms_l5 = None, None, None, None, None, None
-            G_loss_grad_norms, G_loss_grad_norms_l1, G_loss_grad_norms_l2, G_loss_grad_norms_l3, G_loss_grad_norms_l4, G_loss_grad_norms_l5, G_loss_grad_norms_l6 = None, None, None, None, None, None, None
-
+            D_loss_grad_norms, G_loss_grad_norms = None, None
+            
         if epoch < 10:
             D_params = get_all_params(get_all_layers(D))
             with open(os.path.join(out_dir, 'discriminator_model_{}.npz'.format(epoch+1)), 'w+') as f:
